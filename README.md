@@ -53,8 +53,23 @@ The set is split 50/50:
 
 Many cases come in pairs that share a value or format but differ in label, for example the same UUID as a
 `HEROKU_API_KEY` and as a log correlation ID, or an Algolia admin key next to its search-only key. The comment above
-each case explains the label and links its pair. Cases marked "Originally sample_x" come from the first 23-case set,
-which drew on gitleaks, GitGuardian, decryptiondigest.com, and cremit.io.
+each case explains the label and links its pair.
 
 All secret values are randomly generated (key material with openssl and ssh-keygen) and have never been valid
 credentials. Expect secret scanners and GitHub push protection to flag `fixtures.py` anyway.
+
+### Sources
+
+20 cases (marked "Originally sample_x") come from the first 23-case set, which was built from these sources:
+
+- [gitleaks](https://github.com/gitleaks/gitleaks): token formats from its detection rules (GitHub, Slack), the
+  `cafebabe:deadbeef` string from a rule's regex self-test, and the SSN values from its README allowlist example
+- [GitGuardian generic high entropy secret detector docs](https://docs.gitguardian.com/secrets-detection/secrets-detection-engine/detectors/generics/generic_high_entropy_secret):
+  the low-entropy and non-sensitive-name examples
+- [Decryption Digest: secrets scanning in pre-commit and CI](https://www.decryptiondigest.com/blog/secrets-scanning-pre-commit-ci-enforcement):
+  the `EXAMPLE_API_KEY` and `test_token_` allowlist placeholders, and the provider list (GCP, Twilio)
+- [Cremit: secret scanning false positives](https://www.cremit.io/blog/secret-scanning-false-positives-causes-and-fixes):
+  the false positive categories (AWS documentation keys, commit SHAs, UUIDs, base64 images, lockfile hashes)
+
+The rest were written for this project. Formats follow each provider's public token format, and the placeholders use
+common conventions such as AWS's documentation key pair and jwt.io's default `your-256-bit-secret`.
