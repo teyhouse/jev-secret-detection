@@ -6,6 +6,8 @@ credential that someone reading it could use?"), and the returned probability is
 
 There is deliberately no regex matching or provider verification. The goal is to score Jev itself.
 
+![Sample report output](assets/screenshot.png)
+
 ## Usage
 
 ```bash
