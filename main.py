@@ -1,12 +1,14 @@
 """Async Noul test: does a file snippet contain a real secret credential?"""
 
 import asyncio
+import sys
 import time
 
 from dotenv import load_dotenv
 from typesafe_sdk import AsyncTypeSafeClient
 
 from fixtures import CASES, Case
+from fixtures_edge import CASES as EDGE_CASES
 from questions import MODEL, QUESTIONS
 from utils import Result, print_report
 
@@ -22,12 +24,12 @@ async def run_case(client: AsyncTypeSafeClient, name: str, case: Case) -> Result
     return Result(name, case.category, case.expected_secret, noul, elapsed_ms)
 
 
-async def main() -> None:
+async def main(cases: dict[str, Case]) -> None:
     async with AsyncTypeSafeClient() as client:
-        results = await asyncio.gather(*(run_case(client, name, case) for name, case in CASES.items()))
+        results = await asyncio.gather(*(run_case(client, name, case) for name, case in cases.items()))
 
     print_report(list(results))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main(EDGE_CASES if sys.argv[1:] == ["edge"] else CASES))
