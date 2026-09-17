@@ -2,22 +2,40 @@
 
 from typesafe_sdk import Noul
 
-MODEL = "jev-latest"
+# Pinned instead of jev-latest, so an alias move can't silently change the results.
+MODEL = "jev-1.13.0"
 
 QUESTIONS = {
-    "contains_live_secret": Noul(
-        instructions=(
-            "Does this text contain a real, sensitive credential that could grant "
-            "actual access to a system (an API key, password, token, or similar)?"
-        ),
+    "contains_real_secret": Noul(
+        instructions={
+            "question": (
+                "Does `content` contain a real secret credential that someone reading it could use to gain access?"
+            ),
+            "credential_types": [
+                "API key or access token",
+                "Password or passphrase",
+                "Private key",
+                "URL, header, or config entry that embeds one of these",
+            ],
+            "focus": "Judge the values actually written in `content`. Use `file_path` only as context.",
+        },
         criteria={
-            "true": (
-                "Contains what appears to be a live, working credential, a real key that could be used to authenticate"
-            ),
-            "false": (
-                "Contains no credential, or only a placeholder/example/documentation "
-                "credential that isn't functional and grants no access"
-            ),
+            "true": {
+                "what": "A complete credential value is written out and looks issued or chosen for real use",
+                "includes": "Credentials that are only base64-encoded, which anyone can decode",
+            },
+            "false": {
+                "what": "No usable credential value is written out",
+                "does_not_count": [
+                    "Placeholder, example, dummy, or test values",
+                    "Redacted, masked, or truncated values",
+                    "References to a secret stored elsewhere, such as an environment variable or secret manager",
+                    "Encrypted values",
+                    "Public keys and identifiers that are public by design",
+                    "Hashes, checksums, commit SHAs, and IDs",
+                    "Personal data that is not a login credential",
+                ],
+            },
         },
     ),
 }
