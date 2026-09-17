@@ -14,21 +14,43 @@ from utils import Result, print_report
 
 load_dotenv()
 
+# Firing every case at once queues requests behind each other's TLS handshakes and 529 retries, which inflated the
+# measured round trip from ~300 ms to ~2 s. A bounded pool keeps each timing close to a lone request.
+CONCURRENCY = 16
 
-async def run_case(client: AsyncTypeSafeClient, name: str, case: Case) -> Result:
+
+async def run_case(client: AsyncTypeSafeClient, pool: asyncio.Semaphore, name: str, case: Case) -> Result:
     state = {"file_path": case.file_path, "content": case.content}
-    start = time.perf_counter()
-    result = await client.system_one(state=state, questions=QUESTIONS, model=MODEL)
-    elapsed_ms = (time.perf_counter() - start) * 1000
+    async with pool:
+        start = time.perf_counter()
+        result = await client.system_one(state=state, questions=QUESTIONS, model=MODEL)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+    response = result.raw_http_response
+    # Undocumented envoy header: time spent behind the API gateway, so it leaves out the network round trip.
+    server_ms = response.headers.get("x-envoy-upstream-service-time")
+    retries = int(response.request.headers.get("X-TypeSafe-Retry-Count", 0))
     noul = result.nouls["contains_real_secret"].noul
-    return Result(name, case.category, case.expected_secret, noul, elapsed_ms)
+    return Result(
+        name,
+        case.category,
+        case.expected_secret,
+        noul,
+        elapsed_ms,
+        float(server_ms) if server_ms else None,
+        retries,
+    )
 
 
 async def main(cases: dict[str, Case]) -> None:
+    pool = asyncio.Semaphore(CONCURRENCY)
     async with AsyncTypeSafeClient() as client:
-        results = await asyncio.gather(*(run_case(client, name, case) for name, case in cases.items()))
+        # Open the pool's connections with model listings first, so TLS setup does not land in the timings.
+        await asyncio.gather(*(client.models.list() for _ in range(CONCURRENCY)))
+        start = time.perf_counter()
+        results = await asyncio.gather(*(run_case(client, pool, name, case) for name, case in cases.items()))
+        wall_s = time.perf_counter() - start
 
-    print_report(list(results))
+    print_report(list(results), wall_s, CONCURRENCY)
 
 
 if __name__ == "__main__":

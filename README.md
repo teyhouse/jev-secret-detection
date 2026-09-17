@@ -15,21 +15,43 @@ echo "TYPESAFE_API_KEY=..." > .env
 uv run python main.py
 ```
 
-The report shows one row per case, then:
+Add `edge` (`uv run python main.py edge`) to run the edge batch in `fixtures_edge.py` instead.
+
+The report shows one row per case (noul, band, round trip, and server time), then:
 
 - accuracy at a 0.5 threshold
 - AUC (how well the scores rank secrets above non-secrets, independent of any threshold)
+- recall (share of secrets flagged) and precision (share of flagged cases that are secrets)
+- mean noul for secrets and for non-secrets, and the Brier score (mean squared gap between noul and label, 0 is
+  perfect and 0.25 is what always answering 0.5 gets)
 - how many cases fall in the review band (0.3 to 0.7) versus confident right or wrong
-- accuracy per category
+- accuracy and mean noul per category
+- latency: mean, p50, p95, and max for the round trip and for server time, plus requests per second
+
+### Latency
+
+The round trip is what the client waits for. Server time comes from the `x-envoy-upstream-service-time` response
+header (undocumented, so the line disappears if TypeSafe drops it) and leaves out the network. TypeSafe's docs say most
+queries complete in about 100 ms, which matches the server p50 of 75 to 90 ms measured here.
+
+The API runs in AWS `us-west-2`, so the network sets the floor on the round trip. From a machine with a 185 ms TCP
+round trip to it, a warm request takes about 290 ms at p50, and a request on a new connection takes about 1.2 s
+(TCP and TLS setup).
+
+`main.py` sends 16 requests at a time and opens the connections before timing starts. Sending all 100 at once
+pushed the round trip p50 to about 2 s (the server time stayed near 90 ms) and triggered `529 Overloaded` retries.
+The report counts requests the SDK retried, since their round trip includes the backoff. p99 is left out because with
+100 cases it lands between the two slowest requests, which max already shows.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `main.py` | Runs every case concurrently and prints the report |
+| `main.py` | Runs the cases (16 at a time) and prints the report |
 | `questions.py` | The Noul question and the pinned model (`jev-1.13.0`) |
 | `fixtures.py` | The 100 test cases |
-| `utils.py` | Scoring (bands, AUC) and table output |
+| `fixtures_edge.py` | 17 hard placeholder and redacted cases, paired with real secrets |
+| `utils.py` | Scoring (bands, AUC, Brier), latency percentiles, and table output |
 
 ## Test data
 
