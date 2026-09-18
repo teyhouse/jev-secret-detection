@@ -3,7 +3,8 @@
 from fixtures import Case
 
 CASES = {
-    # secret: no - Slack's own documentation placeholder, correct xoxb- prefix but the body says it is fake. Pair: edge_002.
+    # secret: no - Slack's own documentation placeholder, correct xoxb- prefix but the body says it is fake.
+    # Pair: edge_002.
     "edge_001": Case(
         file_path="scripts/notify_deploy.py",
         content=(

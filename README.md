@@ -15,7 +15,8 @@ echo "TYPESAFE_API_KEY=..." > .env
 uv run python main.py
 ```
 
-Add `edge` (`uv run python main.py edge`) to run the edge batch in `fixtures_edge.py` instead.
+The default run is the 100-case set. Add `edge` or `config` (`uv run python main.py config`) to run one of
+the smaller batches instead.
 
 The report shows one row per case (noul, band, round trip, and server time), then:
 
@@ -51,6 +52,7 @@ The report counts requests the SDK retried, since their round trip includes the 
 | `questions.py` | The Noul question and the pinned model (`jev-1.13.0`) |
 | `fixtures.py` | The 100 test cases |
 | `fixtures_edge.py` | 17 hard placeholder and redacted cases, paired with real secrets |
+| `fixtures_config.py` | 20 config-shaped cases: low entropy, no vendor prefix, real config formats |
 | `utils.py` | Scoring (bands, AUC, Brier), latency percentiles, and table output |
 
 ## Test data
@@ -82,6 +84,42 @@ each case explains the label and links its pair.
 All secret values are randomly generated (key material with openssl and ssh-keygen) and have never been valid
 credentials. Expect secret scanners and GitHub push protection to flag `fixtures.py` anyway.
 
+### Config batch
+
+`fixtures_config.py` (`uv run python main.py config`) holds 20 cases where the value is low entropy, carries no
+vendor prefix, and sits in a real config file format. Nothing in the string itself says "credential", so the label
+can only be decided by asking whether the value is the right kind of value for the field it is written into:
+`password Mailer-Relay-7719` in an msmtp account block is a working mail password, while
+`passwordeval "pass show smtp/brightmoor/alerts"` in the same slot is a command that fetches one.
+
+This is the class that prefix and entropy rules cannot reach, and the class the other two batches under-represent.
+Both of those are built from formats that pattern rules already target, so a scanner looks strong on them by
+construction. An ops-chosen password like `Depot-Forklift-5518` scores like a product name.
+
+11 cases are secrets: an msmtp relay password, an LDAP `bindpw`, a plaintext pgbouncer userlist, a Spring
+`spring.datasource.password`, a strongSwan PSK, a CIFS password inside fstab mount options, an SNMP read community
+string, a Kafka SASL password inside the one-line JAAS string, a Grafana `admin_password`, a Wi-Fi `psk`, and an
+`ansible_become_pass` in committed group_vars.
+
+9 are the config-shaped false positives: apr1 and bcrypt hashes in an `.htpasswd`, a SCRAM verifier and a
+pgbouncer md5 hash in the same userlist that held the plaintext, pointers to a credentials file and to a password
+manager, `bindpw CHANGE_ME_BEFORE_DEPLOY`, Java's documented `changeit` truststore default, a gateway section
+where every field name says `api_key` but the values are a header name and a length rule, and test seed users with
+`hunter2` and `correct horse battery staple`. Most cases are pairs that share a file and a field and differ only
+in the value.
+
+All passwords were invented for this file and have never been valid. The hashes are genuine apr1, bcrypt, SCRAM,
+and pgbouncer md5 digests of invented passwords, so they have the right structure without protecting anything.
+
+**What it showed** (two runs, `jev-1.13.0`): 15/20 and 16/20 correct at a 0.5 threshold, AUC 0.939 and 0.955,
+against 99/100 on the main set and 16/17 on the edge batch in the same session, which is the gap the batch was
+built to find.
+All 8 config-shaped passwords were caught, at a mean noul of 0.88, so the class regex walks past is not where Jev
+struggles. Every miss but one was a non-secret pushed up into the review band: the SCRAM verifier (0.66, 0.73),
+the `.htpasswd` hashes (0.54, 0.53), `changeit` (0.50, 0.52), and the stock test passwords (0.59, 0.59). The one
+missed secret was the SNMP community string (0.45, 0.41), the only case where no field name mentions a credential
+at all.
+
 ### Sources
 
 20 cases (marked "Originally sample_x") come from the first 23-case set, which was built from these sources:
@@ -97,3 +135,23 @@ credentials. Expect secret scanners and GitHub push protection to flag `fixtures
 
 The rest were written for this project. Formats follow each provider's public token format, and the placeholders use
 common conventions such as AWS's documentation key pair and jwt.io's default `your-256-bit-secret`.
+
+The config batch was not copied from a dataset, since the published ones carry real leaked values, but its shape
+follows what the research on those datasets reports:
+
+- [SecretBench](https://github.com/setu1421/SecretBench)
+  ([paper](https://arxiv.org/abs/2303.06729)): 97,479 candidates from 818 public GitHub repositories, labeled by
+  hand. It was built by running TruffleHog and Gitleaks over those repositories, and of its 15,084 true secrets
+  only 150 are passwords and 27 are usernames, which describes what those tools surface more than what leaks. Its
+  per-candidate `entropy`, `has_words`, and `is_template` columns are the axes this batch deliberately holds fixed.
+- [A Comparative Study of Software Secrets Reporting by Secret Detection
+  Tools](https://arxiv.org/abs/2307.00714): nine tools against a benchmark. It traces false positives to
+  "employing generic regular expressions and ineffective entropy calculation", and false negatives to "faulty
+  regular expressions, skipping specific file types, and insufficient rulesets".
+- [AssetHarvester](https://arxiv.org/abs/2403.19072): pairs each secret with the asset it opens, on the argument
+  that the value alone does not tell you whether a finding matters. The config cases keep the asset in the snippet
+  for the same reason, so the database URL sits next to the password and the tunnel endpoints next to the PSK.
+
+The config file formats follow their own upstream documentation (msmtp, nslcd, pgbouncer, Spring Boot,
+strongSwan, net-snmp, Kafka, Grafana, wpa_supplicant, Ansible), and `changeit`, `hunter2`, `letmein`, and
+`correct horse battery staple` are used as the well-known non-secrets they are.

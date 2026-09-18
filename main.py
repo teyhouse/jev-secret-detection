@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from typesafe_sdk import AsyncTypeSafeClient
 
 from fixtures import CASES, Case
+from fixtures_config import CASES as CONFIG_CASES
 from fixtures_edge import CASES as EDGE_CASES
 from questions import MODEL, QUESTIONS
 from utils import Result, print_report
@@ -17,6 +18,8 @@ load_dotenv()
 # Firing every case at once queues requests behind each other's TLS handshakes and 529 retries, which inflated the
 # measured round trip from ~300 ms to ~2 s. A bounded pool keeps each timing close to a lone request.
 CONCURRENCY = 16
+
+BATCHES = {"main": CASES, "edge": EDGE_CASES, "config": CONFIG_CASES}
 
 
 async def run_case(client: AsyncTypeSafeClient, pool: asyncio.Semaphore, name: str, case: Case) -> Result:
@@ -54,4 +57,7 @@ async def main(cases: dict[str, Case]) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main(EDGE_CASES if sys.argv[1:] == ["edge"] else CASES))
+    batch = sys.argv[1] if sys.argv[1:] else "main"
+    if batch not in BATCHES:
+        sys.exit(f"unknown batch {batch!r}, pick one of: {', '.join(BATCHES)}")
+    asyncio.run(main(BATCHES[batch]))

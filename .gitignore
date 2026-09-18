@@ -12,3 +12,6 @@ wheels/
 # Environment variables
 .env
 .idea
+
+# Local experiments, not part of the benchmark
+wiz_threat.py
